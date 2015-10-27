@@ -82,3 +82,12 @@ func TestItemBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestAtoi(t *testing.T) {
+	if v, _ := atoi([]byte("-1234567")); v != -1234567 {
+		t.Errorf("error in atoi, expected -1234567, got %d", v)
+	}
+	// TODO:find nicer way to get 100% coverage
+	atoi([]byte{})
+	atoi([]byte{0})
+}

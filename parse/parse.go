@@ -85,27 +85,3 @@ func (i item) String() string {
 	}
 	return fmt.Sprintf("unknown(%q, %d)", string(i.val), i.i)
 }
-
-// itoa fills dst with ASCII representation of val, and returns the number of
-// bytes used. dst should have enough room for a full int64 (20 byte len).
-// itoa can leave dst dirty beyond the number of bytes used for the final
-// value.
-func itoa(dst []byte, val int64) int {
-	if val == 0 {
-		dst[0] = '0'
-		return 1
-	}
-	i := 0
-	if val < 0 {
-		dst[i] = '-'
-		val = -val
-		i++
-	}
-	l := 0
-	for val > 0 {
-		dst[19-l], val = '0'+byte(val%10), val/10
-		l++
-	}
-	copy(dst[i:i+l], dst[20-l:20])
-	return i + l
-}
