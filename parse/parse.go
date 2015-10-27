@@ -55,6 +55,8 @@ func (i item) bytes() (b []byte) {
 		b[0] = '*'
 		l := itoa(b[1:], i.i)
 		b = b[:1+l+2] // '*' + intlen + CRLF
+	default:
+		return nil
 	}
 	b[len(b)-2], b[len(b)-1] = '\r', '\n'
 	return
