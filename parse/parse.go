@@ -1,6 +1,15 @@
 package parse
 
-import "fmt"
+import (
+	"bytes"
+	"errors"
+	"fmt"
+)
+
+var (
+	errInvalid    = errors.New("rcp/parse invalid RESP line")
+	errIncomplete = errors.New("rcp/parse incomplete RESP line")
+)
 
 type item struct {
 	typ itemType
@@ -84,4 +93,58 @@ func (i item) String() string {
 		return fmt.Sprintf("unknown(nil, %d)", i.i)
 	}
 	return fmt.Sprintf("unknown(%q, %d)", string(i.val), i.i)
+}
+
+// split is a bufio.SplitFunc used to split and validate data from an
+// io.Reader reading RESP lines.
+func split(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	i := bytes.IndexByte(data, '\n')
+	if i < 0 {
+		if atEOF {
+			return 0, nil, errIncomplete
+		}
+		// Request more data.
+		return 0, nil, nil
+	}
+	j := i
+	if j > 0 && data[j-1] == '\r' {
+		j--
+	}
+	switch data[0] {
+	case ':', '$', '*':
+	default:
+		// We have a full newline-terminated line.
+		return i + 1, data[0:j], nil
+	}
+	var n int64
+	n, err = atoi(data[1:j])
+	if err != nil {
+		return 0, nil, errInvalid
+	}
+	if data[0] != '$' {
+		return i + 1, data[0:j], nil
+	}
+	// TODO: make sure n fits in plain int?
+	m := int(n)
+	switch {
+	case m < -1:
+		return 0, nil, errInvalid
+	case m == -1:
+		return i + 1, data[0:j], nil
+	case len(data) < i+1+m+1, len(data) < i+1+m+2 && data[i+1+m] == '\r':
+		if atEOF {
+			return 0, nil, errIncomplete
+		}
+		// Request more data
+		return 0, nil, nil
+	case data[i+1+m] == '\n':
+		return i + 1 + m + 1, data[0 : i+1+m], nil
+	case data[i+1+m] == '\r' && data[i+1+m+1] == '\n':
+		return i + 1 + m + 2, data[0 : i+1+m], nil
+	default:
+		return 0, nil, errInvalid
+	}
 }

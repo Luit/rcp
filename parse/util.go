@@ -39,6 +39,7 @@ func atoi(src []byte) (v int64, err error) {
 		case i == 0 && src[i] == '-':
 			neg = true
 		case '0' <= src[i] && src[i] <= '9':
+			// TODO: integer overflow should be an error
 			v = v*10 + int64(src[i]-'0')
 		default:
 			return v, errors.New("parse.atoi: invalid number")
