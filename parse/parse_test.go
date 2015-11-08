@@ -1,73 +1,72 @@
 package parse
 
 import (
-	"bufio"
 	"bytes"
 	"testing"
 )
 
 var itemTests = []struct {
-	in  item
+	in  Item
 	out []byte
 }{
 	{
-		item{typ: itemString, val: []byte("OK")},
+		Item{typ: ItemString, val: []byte("OK")},
 		[]byte("+OK\r\n"),
 	},
 	{
-		item{typ: itemError, val: []byte("Error message")},
+		Item{typ: ItemError, val: []byte("Error message")},
 		[]byte("-Error message\r\n"),
 	},
 	{
-		item{typ: itemInteger},
+		Item{typ: ItemInteger},
 		[]byte(":0\r\n"),
 	},
 	{
-		item{typ: itemInteger, i: 1000},
+		Item{typ: ItemInteger, i: 1000},
 		[]byte(":1000\r\n"),
 	},
 	{
-		item{typ: itemBulk, val: []byte("foobar")},
+		Item{typ: ItemBulk, val: []byte("foobar")},
 		[]byte("$6\r\nfoobar\r\n"),
 	},
 	{
-		item{typ: itemBulk, val: []byte{}},
+		Item{typ: ItemBulk, val: []byte{}},
 		[]byte("$0\r\n\r\n"),
 	},
 	{
-		item{typ: itemBulk},
+		Item{typ: ItemBulk},
 		[]byte("$-1\r\n"),
 	},
 	{
-		item{typ: itemArray},
+		Item{typ: ItemArray},
 		[]byte("*0\r\n"),
 	},
 	{
-		item{typ: itemArray, i: 2},
+		Item{typ: ItemArray, i: 2},
 		[]byte("*2\r\n"),
 	},
 	{
-		item{typ: itemArray, i: -1},
+		Item{typ: ItemArray, i: -1},
 		[]byte("*-1\r\n"),
 	},
 	{
-		item{typ: itemInteger, i: -9223372036854775807},
+		Item{typ: ItemInteger, i: -9223372036854775807},
 		[]byte(":-9223372036854775807\r\n"),
 	},
 	{
-		item{typ: itemInteger, i: 9223372036854775807},
+		Item{typ: ItemInteger, i: 9223372036854775807},
 		[]byte(":9223372036854775807\r\n"),
 	},
 	{
-		item{typ: itemInline, val: []byte("EXISTS somekey")},
+		Item{typ: ItemInline, val: []byte("EXISTS somekey")},
 		[]byte("EXISTS somekey\r\n"),
 	},
 	{
-		item{typ: -999, val: []byte("junk")},
+		Item{typ: -999, val: []byte("junk")},
 		nil,
 	},
 	{
-		item{typ: -998, i: 10},
+		Item{typ: -998, i: 10},
 		nil,
 	},
 }
@@ -75,11 +74,11 @@ var itemTests = []struct {
 func TestItemBytes(t *testing.T) {
 	for _, test := range itemTests {
 		if test.in.String() == "" {
-			t.Errorf("item.String() failed for %#v", test.in)
+			t.Errorf("Item.String() failed for %#v", test.in)
 		}
 		out := test.in.bytes()
 		if !bytes.Equal(out, test.out) {
-			t.Errorf("item %s got %q, expected %q", test.in, string(out), string(test.out))
+			t.Errorf("Item %s got %q, expected %q", test.in, string(out), string(test.out))
 		}
 	}
 }
@@ -99,21 +98,21 @@ var invalidSplit = [][]byte{
 }
 
 func TestSplit(t *testing.T) {
-	advance, token, err := split([]byte{}, false)
+	advance, token, err := Split([]byte{}, false)
 	if advance != 0 || token != nil || err != nil {
 		t.Errorf("unexpected return from empty non-EOF split: %d, %q, %s", advance, string(token), errorOrNil(err))
 	}
-	advance, token, err = split([]byte{}, true)
+	advance, token, err = Split([]byte{}, true)
 	if advance != 0 || token != nil || err != nil {
 		t.Errorf("unexpected return from empty at-EOF split: %d, %q, %s", advance, string(token), errorOrNil(err))
 	}
 	for _, data := range invalidSplit {
-		advance, token, err = split(data, true)
+		advance, token, err = Split(data, true)
 		if advance != 0 || token != nil || err != errInvalid {
 			t.Errorf("unexpected return from invalid split %q: %d, %q, %s", string(data), advance, string(token), errorOrNil(err))
 		}
 	}
-	advance, token, err = split([]byte{'$', '0', '\n', '\n'}, true)
+	advance, token, err = Split([]byte{'$', '0', '\n', '\n'}, true)
 	if err != nil {
 		t.Errorf("unexpected error for split zero bulk: %s", errorOrNil(err))
 	}
@@ -125,14 +124,14 @@ func TestSplit(t *testing.T) {
 			continue
 		}
 		for n := range test.out[:len(test.out)-1] {
-			advance, token, err = split(test.out[:n+1], true)
+			advance, token, err = Split(test.out[:n+1], true)
 			if err == nil {
 				t.Errorf("nil error for incomplete split %q", string(test.out[:n+1]))
 			}
 			if advance != 0 || token != nil {
 				t.Errorf("unexpected return from incomplete split %q: %d %q", string(test.out[:n+1]), advance, string(token))
 			}
-			advance, token, err = split(test.out[:n+1], false)
+			advance, token, err = Split(test.out[:n+1], false)
 			if err != nil {
 				t.Error("error returned from split: ", err)
 			}
@@ -155,26 +154,22 @@ func TestScanner(t *testing.T) {
 			added++
 		}
 	}
-	r := bytes.NewReader(b)
-	s := bufio.NewScanner(r)
-	s.Split(split)
+	r := NewReader(bytes.NewReader(b))
 	for x := 0; x < 1000; x++ {
-		for _, test := range itemTests {
+		for n, test := range itemTests {
 			if test.out == nil {
 				continue
 			}
-			if !s.Scan() {
-				break
+			item, err := r.Read()
+			if err != nil {
+				t.Logf("%d %d", x, n)
+				t.Fatalf("error reading: %s", err)
 			}
-			token := append(s.Bytes(), '\r', '\n')
-			if !bytes.Equal(token, test.out) {
-				t.Errorf("expected %q, got %q", string(test.out), string(token))
+			if test.in.String() != item.String() {
+				t.Errorf("unexpected item %s, expected %s", item, test.in)
 			}
 			scanned++
 		}
-	}
-	if s.Err() != nil {
-		t.Fatalf("error scanning: %s", s.Err().Error())
 	}
 	if added != scanned {
 		t.Fatalf("scanned %d, expected %d", scanned, added)
