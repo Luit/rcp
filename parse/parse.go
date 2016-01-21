@@ -1,4 +1,4 @@
-package parse
+package parse // import "luit.eu/rcp/parse"
 
 import (
 	"bufio"
