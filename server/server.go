@@ -22,7 +22,9 @@ package server // import "luit.eu/rcp/server"
 
 import (
 	"io"
+	"log"
 	"net"
+	"strings"
 
 	"luit.eu/resp"
 )
@@ -36,20 +38,15 @@ func connect(addr string) (*net.TCPConn, error) {
 }
 
 func Dumb(clientConn *net.TCPConn) {
+	var backendAddr = "127.0.0.1:30001"
 	var backendConn *net.TCPConn
+	var backend *resp.Reader
 	defer func() {
 		clientConn.Close()
 		if backendConn != nil {
 			backendConn.Close()
 		}
 	}()
-	var err error
-	backendConn, err = connect("127.0.0.1:6379")
-	if err != nil {
-		io.WriteString(clientConn, "-ERR backend dial error\r\n")
-		return
-	}
-	backend := resp.NewReader(backendConn)
 	client := resp.NewCommandReader(clientConn)
 	for {
 		data, parts, err := client.Read()
@@ -61,13 +58,24 @@ func Dumb(clientConn *net.TCPConn) {
 			}
 			return
 		}
+	roundtrip:
+		if backendConn == nil {
+			backendConn, err = connect(backendAddr)
+			if err != nil {
+				io.WriteString(clientConn, "-ERR backend dial error\r\n")
+				return
+			}
+			log.Printf("connected to server %s\n", backendAddr)
+			backend = resp.NewReader(backendConn)
+		}
 		_ = parts // Using this later
 		_, err = backendConn.Write(data)
 		if err != nil {
 			io.WriteString(clientConn, "-ERR backend write error\r\n")
 			return
 		}
-		data, err = backend.Read()
+		var response []byte
+		response, err = backend.Read()
 		if err != nil {
 			if v, ok := err.(resp.Error); ok {
 				clientConn.Write(v.RESP())
@@ -76,17 +84,27 @@ func Dumb(clientConn *net.TCPConn) {
 			}
 			return
 		}
-		if data[0] == '-' {
-			respError := resp.ParseError(data)
+		if response[0] == '-' {
+			respError := resp.ParseError(response)
 			prefix := respError.Prefix()
 			switch prefix {
 			case "ASK":
 				// TODO: Do stuff
+				log.Fatal(respError.Error())
 			case "MOVED":
-				// TODO: Do stuff here too
+				message := respError.Error()
+				i := strings.LastIndexByte(message, ' ')
+				if i == -1 {
+					io.WriteString(clientConn, "-ERR unexpected -MOVED string\r\n")
+					return
+				}
+				backendAddr = message[i+1:]
+				backendConn.Close()
+				backendConn = nil
+				goto roundtrip
 			}
 		}
-		_, err = clientConn.Write(data)
+		_, err = clientConn.Write(response)
 		if err != nil {
 			return
 		}

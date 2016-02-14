@@ -49,7 +49,7 @@ issue commands that are impossible (commands accessing across hash slots).`,
 		}
 		l, err := net.ListenTCP("tcp", laddr)
 		if err != nil {
-			fmt.Printf("Error: unable to listen on %s: %v", laddr.String(), err)
+			fmt.Printf("Error: unable to listen on %s: %v\n", laddr.String(), err)
 			return
 		}
 		defer l.Close()
